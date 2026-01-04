@@ -1,0 +1,106 @@
+"use client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { auth } from "@/lib/firebase";
+import { useToast } from "@/hooks/use-toast";
+import { FirebaseError } from "firebase/app";
+
+const signupSchema = z.object({
+  name: z.string().min(2, { message: "Name must be at least 2 characters" }),
+  email: z.string().email({ message: "Invalid email address" }),
+  password: z.string().min(6, { message: "Password must be at least 6 characters" }),
+});
+
+type SignupFormValues = z.infer<typeof signupSchema>;
+
+export default function SignupPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<SignupFormValues>({
+    resolver: zodResolver(signupSchema),
+  });
+
+  const onSubmit = async (data: SignupFormValues) => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      await updateProfile(userCredential.user, { displayName: data.name });
+      
+      toast({
+        title: "Account Created",
+        description: "You have been successfully signed up.",
+      });
+      router.push("/dashboard");
+
+    } catch (error) {
+      console.error("Signup failed:", error);
+      let errorMessage = "An unexpected error occurred.";
+      if (error instanceof FirebaseError) {
+        if (error.code === 'auth/email-already-in-use') {
+            errorMessage = "This email is already in use.";
+        }
+      }
+      toast({
+        title: "Sign Up Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Card className="w-full max-w-sm">
+      <CardHeader>
+        <CardTitle className="text-2xl">Sign Up</CardTitle>
+        <CardDescription>
+          Enter your information to create an account.
+        </CardDescription>
+      </CardHeader>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <CardContent className="grid gap-4">
+           <div className="grid gap-2">
+            <Label htmlFor="name">Name</Label>
+            <Input id="name" placeholder="John Doe" {...register("name")} />
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" placeholder="m@example.com" {...register("email")} />
+            {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="password">Password</Label>
+            <Input id="password" type="password" {...register("password")} />
+            {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
+          </div>
+        </CardContent>
+        <CardFooter className="flex flex-col gap-4">
+          <Button className="w-full" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Creating account..." : "Create account"}
+          </Button>
+           <div className="text-center text-sm">
+            Already have an account?{" "}
+            <Link href="/login" className="underline">
+              Log in
+            </Link>
+          </div>
+        </CardFooter>
+      </form>
+    </Card>
+  );
+}
