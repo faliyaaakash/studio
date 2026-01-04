@@ -84,31 +84,31 @@ export default function ResultsPage() {
     }, [attemptId]);
 
     if (loading) {
-         return (
-             <div className="container mx-auto py-12">
-                 <Card className="w-full max-w-4xl mx-auto">
-                     <CardHeader className="text-center">
+        return (
+            <div className="container mx-auto py-12">
+                <Card className="w-full max-w-4xl mx-auto">
+                    <CardHeader className="text-center">
                         <Skeleton className="h-8 w-1/2 mx-auto" />
                         <Skeleton className="h-6 w-1/3 mx-auto mt-2" />
-                     </CardHeader>
-                     <CardContent className="space-y-8">
+                    </CardHeader>
+                    <CardContent className="space-y-8">
                         <div className="flex flex-col items-center justify-center space-y-4">
                             <Skeleton className="h-20 w-32" />
                             <Skeleton className="h-8 w-48" />
                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <Skeleton className="h-24 w-full" />
                             <Skeleton className="h-24 w-full" />
-                         </div>
-                         <div className="space-y-4">
+                        </div>
+                        <div className="space-y-4">
                             <Skeleton className="h-20 w-full" />
                             <Skeleton className="h-20 w-full" />
                             <Skeleton className="h-20 w-full" />
-                         </div>
-                     </CardContent>
-                 </Card>
-             </div>
-         );
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        );
     }
 
     if (error || !result) {
@@ -126,7 +126,7 @@ export default function ResultsPage() {
             </div>
         );
     }
-    
+
     const percentage = Math.round((result.score / result.totalQuestions) * 100);
 
     const renderAnswer = (answer: string | string[] | null) => {
@@ -134,7 +134,7 @@ export default function ResultsPage() {
         if (Array.isArray(answer)) {
             return (
                 <div className="flex flex-wrap gap-1">
-                    {answer.map(a => <Badge variant="secondary" key={a}>{a}</Badge>)}
+                    {answer.map((a, i) => <Badge variant="secondary" key={`${i}-${a}`}>{a}</Badge>)}
                 </div>
             )
         }
@@ -152,8 +152,8 @@ export default function ResultsPage() {
                 <CardContent className="space-y-8">
                     <div className="flex flex-col items-center justify-center space-y-4">
                         <p className="text-muted-foreground">Your Score</p>
-                        <h2 className="text-6xl font-bold text-primary">{percentage}%</h2>
-                        <p className="text-2xl font-semibold">{result.score} / {result.totalQuestions} Correct</p>
+                        <h2 className="text-6xl font-bold text-primary">{result.score} / {result.totalQuestions}</h2>
+                        <p className="text-2xl font-semibold">Marks Obtained</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">

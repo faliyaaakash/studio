@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -28,8 +29,10 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectPath = searchParams.get('redirect') || '/dashboard';
   const { toast } = useToast();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -38,13 +41,13 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormValues) => {
     try {
       await signInWithEmailAndPassword(auth, data.email, data.password);
-      router.push("/dashboard");
+      router.push(redirectPath);
     } catch (error) {
       console.error("Login failed:", error);
       let errorMessage = "An unexpected error occurred.";
       if (error instanceof FirebaseError) {
         if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-            errorMessage = "Invalid email or password. Please try again.";
+          errorMessage = "Invalid email or password. Please try again.";
         }
       }
       toast({
@@ -57,15 +60,15 @@ export default function LoginPage() {
 
   const handleGoogleSignIn = async () => {
     try {
-        await signInWithPopup(auth, googleProvider);
-        router.push("/dashboard");
+      await signInWithPopup(auth, googleProvider);
+      router.push(redirectPath);
     } catch (error) {
-        console.error("Google Sign-In failed:", error);
-        toast({
-            title: "Google Sign-In Failed",
-            description: "Could not sign in with Google. Please try again.",
-            variant: "destructive",
-        });
+      console.error("Google Sign-In failed:", error);
+      toast({
+        title: "Google Sign-In Failed",
+        description: "Could not sign in with Google. Please try again.",
+        variant: "destructive",
+      });
     }
   }
 
@@ -107,14 +110,22 @@ export default function LoginPage() {
           <Button className="w-full" type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Logging in..." : "Log In"}
           </Button>
-           <div className="text-center text-sm">
+          <div className="text-center text-sm">
             Don&apos;t have an account?{" "}
-            <Link href="/signup" className="underline">
+            <Link href={`/signup${redirectPath && redirectPath !== '/dashboard' ? `?redirect=${redirectPath}` : ''}`} className="underline">
               Sign up
             </Link>
           </div>
         </CardFooter>
       </form>
     </Card>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

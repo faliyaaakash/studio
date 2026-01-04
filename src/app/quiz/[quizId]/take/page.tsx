@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import useCheatingDetection from "@/hooks/use-cheating-detection";
-import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import type { Quiz, Question, QuestionOption } from "@/lib/types";
 import { useAuth } from "@/components/providers/auth-provider";
 import { db } from "@/lib/firebase";
@@ -37,47 +37,71 @@ export default function QuizTakePage() {
   const handleSubmitQuiz = useCallback(async () => {
     if (isSubmitting || !quiz || !user) return;
     setIsSubmitting(true);
-    
+
     // Calculate score
     let score = 0;
     const answeredQuestions = quiz.questions.map(q => {
       const userAnswer = answers[q.id] || null;
       let isCorrect = false;
       if (userAnswer) {
-          if (q.type === 'msq') {
-              isCorrect = Array.isArray(userAnswer) && userAnswer.length === q.correctAnswers.length && userAnswer.every(a => q.correctAnswers.includes(a));
-          } else {
-              isCorrect = q.correctAnswers[0] === userAnswer;
-          }
+        if (q.type === 'msq') {
+          isCorrect = Array.isArray(userAnswer) && userAnswer.length === q.correctAnswers.length && userAnswer.every(a => q.correctAnswers.includes(a));
+        } else {
+          isCorrect = q.correctAnswers[0] === userAnswer;
+        }
       }
-      if(isCorrect) score++;
+      if (isCorrect) score++;
       return { questionId: q.id, value: userAnswer };
     });
 
     const timeTakenSeconds = Math.round((new Date().getTime() - startTime.getTime()) / 1000);
 
+    const sanitizeData = (data: any): any => {
+      if (data === undefined) return null;
+      if (data === null) return null;
+      if (data instanceof Timestamp) return data;
+      if (data instanceof Date) return data;
+      if (Array.isArray(data)) return data.map(sanitizeData);
+      if (typeof data === 'object') {
+        const newObj: any = {};
+        for (const key in data) {
+          newObj[key] = sanitizeData(data[key]);
+        }
+        return newObj;
+      }
+      return data;
+    };
+
     try {
-        const attemptData = {
-            quizId,
-            quizTitle: quiz.title,
-            userId: user.uid,
-            userName: user.displayName,
-            answers: answeredQuestions,
-            score,
-            totalQuestions: quiz.questions.length,
-            cheatingViolations: violationCount.current,
-            startedAt: Timestamp.fromDate(startTime),
-            submittedAt: Timestamp.now(),
-            timeTakenSeconds,
-        };
+      const rawAttemptData = {
+        quizId: quizId,
+        quizTitle: quiz.title,
+        userId: user.uid,
+        userName: user.displayName,
+        answers: answeredQuestions,
+        score: score,
+        totalQuestions: quiz.questions?.length,
+        cheatingViolations: violationCount.current,
+        startedAt: Timestamp.fromDate(startTime),
+        submittedAt: Timestamp.now(),
+        timeTakenSeconds: timeTakenSeconds,
+      };
 
-        const attemptRef = await addDoc(collection(db, "attempts"), attemptData);
-        router.replace(`/results/${attemptRef.id}`);
+      const attemptData = sanitizeData(rawAttemptData);
 
-    } catch (error) {
-        console.error("Failed to submit quiz", error);
-        toast({ title: "Submission Error", description: "Could not save your quiz results. Please try again.", variant: 'destructive'});
-        setIsSubmitting(false);
+      console.log("Submitting sanitized attempt data:", attemptData);
+
+      const attemptRef = await addDoc(collection(db, "attempts"), attemptData);
+      router.replace(`/results/${attemptRef.id}`);
+
+    } catch (error: any) {
+      console.error("Failed to submit quiz", error);
+      toast({
+        title: "Submission Error",
+        description: error.message || "Could not save your quiz results. Please try again.",
+        variant: 'destructive'
+      });
+      setIsSubmitting(false);
     }
   }, [answers, quiz, router, user, quizId, isSubmitting, startTime, toast]);
 
@@ -101,13 +125,13 @@ export default function QuizTakePage() {
       handleSubmitQuiz();
     }
     // Log violation to firestore
-    if(user) {
-        addDoc(collection(db, "cheating_logs"), {
-            quizId,
-            userId: user.uid,
-            violationNumber: count,
-            timestamp: Timestamp.now(),
-        });
+    if (user) {
+      addDoc(collection(db, "cheating_logs"), {
+        quizId,
+        userId: user.uid,
+        violationNumber: count,
+        timestamp: Timestamp.now(),
+      });
     }
   }, [handleSubmitQuiz, toast, user, quizId]);
 
@@ -120,16 +144,22 @@ export default function QuizTakePage() {
       try {
         const quizRef = doc(db, "quizzes", quizId);
         const quizSnap = await getDoc(quizRef);
-        if(quizSnap.exists()) {
-          const quizData = { id: quizSnap.id, ...quizSnap.data() } as Quiz;
-          setQuiz(quizData);
-          setTimeLeft(quizData.durationMinutes * 60);
+        if (quizSnap.exists()) {
+          const quizDataRaw = { id: quizSnap.id, ...quizSnap.data() } as Quiz;
+          // Ensure all questions have an ID (fallback to index if missing)
+          const questionsWithIds = quizDataRaw.questions.map((q, idx) => ({
+            ...q,
+            id: q.id || `q-${idx}`
+          }));
+
+          setQuiz({ ...quizDataRaw, questions: questionsWithIds });
+          setTimeLeft(quizDataRaw.durationMinutes * 60);
         } else {
-          toast({ title: "Error", description: "Quiz not found.", variant: 'destructive'});
+          toast({ title: "Error", description: "Quiz not found.", variant: 'destructive' });
           router.push('/dashboard');
         }
       } catch (e) {
-        toast({ title: "Error", description: "Failed to load quiz.", variant: 'destructive'});
+        toast({ title: "Error", description: "Failed to load quiz.", variant: 'destructive' });
         router.push('/dashboard');
       } finally {
         setLoading(false);
@@ -166,7 +196,7 @@ export default function QuizTakePage() {
       setCurrentQuestionIndex(prev => prev + 1);
     }
   };
-  
+
   const goToPrevious = () => {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(prev => prev - 1);
@@ -179,18 +209,18 @@ export default function QuizTakePage() {
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if(loading || !quiz || !currentQuestion || timeLeft === null) {
+  if (loading || !quiz || !currentQuestion || timeLeft === null) {
     return (
-        <div className="container mx-auto py-8 flex justify-center">
-            <Card className="w-full max-w-3xl">
-                <CardHeader><Skeleton className="h-10 w-3/4" /></CardHeader>
-                <CardContent className="space-y-6">
-                    <Skeleton className="h-24 w-full" />
-                    <Skeleton className="h-32 w-full" />
-                    <div className="flex justify-between"><Skeleton className="h-10 w-24" /><Skeleton className="h-10 w-24" /></div>
-                </CardContent>
-            </Card>
-        </div>
+      <div className="container mx-auto py-8 flex justify-center">
+        <Card className="w-full max-w-3xl">
+          <CardHeader><Skeleton className="h-10 w-3/4" /></CardHeader>
+          <CardContent className="space-y-6">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <div className="flex justify-between"><Skeleton className="h-10 w-24" /><Skeleton className="h-10 w-24" /></div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -211,32 +241,34 @@ export default function QuizTakePage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="p-4 border rounded-lg min-h-[100px] space-y-4">
-             <p className="text-lg font-semibold">{currentQuestion.questionText}</p>
-             {currentQuestion.imageUrl && <div className="relative h-48 w-full"><Image src={currentQuestion.imageUrl} alt="Question Image" layout="fill" objectFit="contain" className="rounded-md" /></div>}
+            <p className="text-lg font-semibold">{currentQuestion.questionText}</p>
+            {currentQuestion.imageUrl && <div className="relative h-48 w-full"><Image src={currentQuestion.imageUrl} alt="Question Image" layout="fill" objectFit="contain" className="rounded-md" /></div>}
           </div>
           <div>
             {currentQuestion.type === 'mcq' && (
               <RadioGroup
+                key={currentQuestion.id} // Force remount on question change
                 onValueChange={(value) => handleAnswerChange(currentQuestion.id, value)}
                 value={answers[currentQuestion.id] as string || ""}
                 className="space-y-2"
               >
                 {currentQuestion.options?.map((option: QuestionOption, index: number) => (
-                  <Label key={index} className="flex items-center space-x-3 p-4 border rounded-lg transition-colors hover:bg-accent/50 has-[:checked]:bg-accent has-[:checked]:border-primary cursor-pointer">
+                  <Label key={`${currentQuestion.id}-opt-${index}`} className="flex items-center space-x-3 p-4 border rounded-lg transition-colors hover:bg-accent/50 has-[:checked]:bg-accent has-[:checked]:border-primary cursor-pointer">
                     <RadioGroupItem value={option.value} id={`${currentQuestion.id}-${index}`} />
                     <span>{option.value}</span>
                   </Label>
                 ))}
               </RadioGroup>
             )}
-             {currentQuestion.type === 'tf' && (
+            {currentQuestion.type === 'tf' && (
               <RadioGroup
+                key={currentQuestion.id}
                 onValueChange={(value) => handleAnswerChange(currentQuestion.id, value)}
                 value={answers[currentQuestion.id] as string || ""}
                 className="space-y-2"
               >
                 {["True", "False"].map((option, index) => (
-                  <Label key={index} className="flex items-center space-x-3 p-4 border rounded-lg transition-colors hover:bg-accent/50 has-[:checked]:bg-accent has-[:checked]:border-primary cursor-pointer">
+                  <Label key={`${currentQuestion.id}-tf-${index}`} className="flex items-center space-x-3 p-4 border rounded-lg transition-colors hover:bg-accent/50 has-[:checked]:bg-accent has-[:checked]:border-primary cursor-pointer">
                     <RadioGroupItem value={option} id={`${currentQuestion.id}-${index}`} />
                     <span>{option}</span>
                   </Label>
@@ -244,30 +276,30 @@ export default function QuizTakePage() {
               </RadioGroup>
             )}
             {currentQuestion.type === 'msq' && (
-                <div className="space-y-2">
-                    {currentQuestion.options?.map((option: QuestionOption, index: number) => (
-                        <Label key={index} className="flex items-center space-x-3 p-4 border rounded-lg transition-colors hover:bg-accent/50 has-[:checked]:bg-accent has-[:checked]:border-primary cursor-pointer">
-                            <Checkbox
-                                id={`${currentQuestion.id}-${index}`}
-                                value={option.value}
-                                checked={(answers[currentQuestion.id] as string[] || []).includes(option.value)}
-                                onCheckedChange={(checked) => {
-                                    const currentAnswers = (answers[currentQuestion.id] as string[] || []);
-                                    const newAnswers = checked ? [...currentAnswers, option.value] : currentAnswers.filter(a => a !== option.value);
-                                    handleAnswerChange(currentQuestion.id, newAnswers);
-                                }}
-                            />
-                            <span>{option.value}</span>
-                        </Label>
-                    ))}
-                </div>
+              <div className="space-y-2">
+                {currentQuestion.options?.map((option: QuestionOption, index: number) => (
+                  <Label key={index} className="flex items-center space-x-3 p-4 border rounded-lg transition-colors hover:bg-accent/50 has-[:checked]:bg-accent has-[:checked]:border-primary cursor-pointer">
+                    <Checkbox
+                      id={`${currentQuestion.id}-${index}`}
+                      value={option.value}
+                      checked={(answers[currentQuestion.id] as string[] || []).includes(option.value)}
+                      onCheckedChange={(checked) => {
+                        const currentAnswers = (answers[currentQuestion.id] as string[] || []);
+                        const newAnswers = checked ? [...currentAnswers, option.value] : currentAnswers.filter(a => a !== option.value);
+                        handleAnswerChange(currentQuestion.id, newAnswers);
+                      }}
+                    />
+                    <span>{option.value}</span>
+                  </Label>
+                ))}
+              </div>
             )}
             {currentQuestion.type === 'text' && (
-                <Textarea 
-                    placeholder="Your answer..."
-                    value={answers[currentQuestion.id] as string || ""}
-                    onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
-                />
+              <Textarea
+                placeholder="Your answer..."
+                value={answers[currentQuestion.id] as string || ""}
+                onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
+              />
             )}
           </div>
           <div className="flex justify-between items-center pt-4">
@@ -278,7 +310,7 @@ export default function QuizTakePage() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="default" size="lg" disabled={isSubmitting}>
-                      {isSubmitting ? 'Submitting...' : 'Submit Quiz'}
+                    {isSubmitting ? 'Submitting...' : 'Submit Quiz'}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -291,7 +323,7 @@ export default function QuizTakePage() {
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction onClick={handleSubmitQuiz} disabled={isSubmitting}>
-                        {isSubmitting ? 'Submitting...' : 'Submit'}
+                      {isSubmitting ? 'Submitting...' : 'Submit'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

@@ -4,18 +4,19 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from "firebase/firestore";
 import type { Quiz, Attempt } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PlusCircle, Edit, Users, BarChart, Copy, Link as LinkIcon } from "lucide-react";
+import { PlusCircle, Edit, Users, BarChart, Copy, Link as LinkIcon, Trash, Pencil } from "lucide-react";
 import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -35,16 +36,20 @@ export default function DashboardPage() {
         const createdSnapshot = await getDocs(createdQuery);
         const createdData = createdSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Quiz));
         setCreatedQuizzes(createdData);
-        
+
         // Fetch attempted quizzes
         const attemptedQuery = query(collection(db, "attempts"), where("userId", "==", user.uid), orderBy("submittedAt", "desc"));
         const attemptedSnapshot = await getDocs(attemptedQuery);
         const attemptedData = attemptedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Attempt));
         setAttemptedQuizzes(attemptedData);
 
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching dashboard data: ", error);
-        toast({ title: "Error", description: "Could not fetch dashboard data.", variant: "destructive" });
+        toast({
+          title: "Data Fetch Error",
+          description: error.message || "Could not fetch dashboard data. Check console for details.",
+          variant: "destructive"
+        });
       } finally {
         setLoading(false);
       }
@@ -57,6 +62,24 @@ export default function DashboardPage() {
     const link = `${window.location.origin}/quiz/${quizId}`;
     navigator.clipboard.writeText(link);
     toast({ title: "Link Copied!", description: "Quiz link copied to clipboard." });
+  };
+
+  const handleDeleteQuiz = async (quizId: string) => {
+    try {
+      await deleteDoc(doc(db, "quizzes", quizId));
+      setCreatedQuizzes(prev => prev.filter(q => q.id !== quizId));
+      toast({
+        title: "Quiz Deleted",
+        description: "The quiz has been successfully deleted.",
+      });
+    } catch (error) {
+      console.error("Error deleting quiz:", error);
+      toast({
+        title: "Delete Failed",
+        description: "Could not delete the quiz. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -81,8 +104,8 @@ export default function DashboardPage() {
         </TabsList>
         <TabsContent value="my-quizzes" className="mt-6">
           {loading ? (
-             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {[1,2,3].map(i => <Skeleton key={i} className="h-[220px] w-full" />)}
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-[220px] w-full" />)}
             </div>
           ) : createdQuizzes.length > 0 ? (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -95,23 +118,48 @@ export default function DashboardPage() {
                   <CardContent>
                     <div className="flex items-center text-sm text-muted-foreground">
                       <LinkIcon className="mr-2 h-4 w-4" />
-                       <p>Created on {format(quiz.createdAt.toDate(), 'PPP')}</p>
+                      <p>Created on {format(quiz.createdAt.toDate(), 'PPP')}</p>
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-between flex-wrap gap-2">
-                     <Button variant="outline" size="sm" onClick={() => copyQuizLink(quiz.id)}>
-                      <Copy className="mr-2 h-4 w-4" /> Copy Link
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/quiz/${quiz.id}/results`}>
-                        <BarChart className="mr-2 h-4 w-4" /> Results
-                      </Link>
-                    </Button>
-                    {/* <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/edit-quiz/${quiz.id}`}>
-                        <Edit className="mr-2 h-4 w-4" /> Edit
-                      </Link>
-                    </Button> */}
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => copyQuizLink(quiz.id)}>
+                        <Copy className="mr-2 h-4 w-4" /> Copy Link
+                      </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/quiz/${quiz.id}/results`}>
+                          <BarChart className="mr-2 h-4 w-4" /> Results
+                        </Link>
+                      </Button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="icon" asChild title="Edit Quiz">
+                        <Link href={`/edit-quiz/${quiz.id}`}>
+                          <Pencil className="h-4 w-4 text-muted-foreground hover:text-primary" />
+                        </Link>
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" title="Delete Quiz">
+                            <Trash className="h-4 w-4 text-destructive hover:text-red-700" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Quiz</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete <strong>{quiz.title}</strong>? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDeleteQuiz(quiz.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </CardFooter>
                 </Card>
               ))}
@@ -125,7 +173,7 @@ export default function DashboardPage() {
         </TabsContent>
         <TabsContent value="my-attempts" className="mt-6">
           {loading ? (
-             <Skeleton className="h-[300px] w-full" />
+            <Skeleton className="h-[300px] w-full" />
           ) : attemptedQuizzes.length > 0 ? (
             <Card>
               <CardContent className="p-0">
@@ -156,7 +204,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           ) : (
-             <div className="text-center py-12 border-2 border-dashed rounded-lg">
+            <div className="text-center py-12 border-2 border-dashed rounded-lg">
               <h3 className="text-xl font-semibold">No Attempts Yet</h3>
               <p className="text-muted-foreground mt-2">Take a quiz to see your results here.</p>
             </div>

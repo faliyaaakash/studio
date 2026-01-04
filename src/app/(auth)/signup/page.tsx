@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -29,8 +30,10 @@ const signupSchema = z.object({
 
 type SignupFormValues = z.infer<typeof signupSchema>;
 
-export default function SignupPage() {
+function SignupContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectPath = searchParams.get('redirect') || '/dashboard';
   const { toast } = useToast();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
@@ -40,19 +43,55 @@ export default function SignupPage() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       await updateProfile(userCredential.user, { displayName: data.name });
-      
+
+      // Create user document in Firestore
+      try {
+        const { doc, setDoc } = await import("firebase/firestore");
+        const { db } = await import("@/lib/firebase");
+        await setDoc(doc(db, "users", userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: data.email,
+          displayName: data.name,
+          photoURL: null,
+          createdAt: new Date(),
+        });
+      } catch (firestoreError) {
+        console.error("Error creating user profile in Firestore:", firestoreError);
+        // We don't block the sign up if firestore fails, but we log it.
+        // Or we could show a warning. For now, let's proceed as auth is successful.
+      }
+
       toast({
         title: "Account Created",
         description: "You have been successfully signed up.",
       });
-      router.push("/dashboard");
+      router.push(redirectPath);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Signup failed:", error);
       let errorMessage = "An unexpected error occurred.";
       if (error instanceof FirebaseError) {
-        if (error.code === 'auth/email-already-in-use') {
+        switch (error.code) {
+          case 'auth/email-already-in-use':
             errorMessage = "This email is already in use.";
+            break;
+          case 'auth/weak-password':
+            errorMessage = "Password should be at least 6 characters.";
+            break;
+          case 'auth/invalid-email':
+            errorMessage = "Invalid email address.";
+            break;
+          case 'auth/operation-not-allowed':
+            errorMessage = "Email/Password sign-in is not enabled in Firebase Console.";
+            break;
+          case 'auth/network-request-failed':
+            errorMessage = "Network error. Please check your connection.";
+            break;
+          case 'auth/configuration-not-found':
+            errorMessage = "Authentication not enabled in Firebase Console. Please enable Email/Password provider.";
+            break;
+          default:
+            errorMessage = error.message;
         }
       }
       toast({
@@ -73,7 +112,7 @@ export default function SignupPage() {
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="grid gap-4">
-           <div className="grid gap-2">
+          <div className="grid gap-2">
             <Label htmlFor="name">Name</Label>
             <Input id="name" placeholder="John Doe" {...register("name")} />
             {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
@@ -93,14 +132,22 @@ export default function SignupPage() {
           <Button className="w-full" type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Creating account..." : "Create account"}
           </Button>
-           <div className="text-center text-sm">
+          <div className="text-center text-sm">
             Already have an account?{" "}
-            <Link href="/login" className="underline">
+            <Link href={`/login${redirectPath && redirectPath !== '/dashboard' ? `?redirect=${redirectPath}` : ''}`} className="underline">
               Log in
             </Link>
           </div>
         </CardFooter>
       </form>
     </Card>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SignupContent />
+    </Suspense>
   );
 }
