@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, query, where, getDocs, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, deleteDoc, orderBy } from "firebase/firestore";
 import type { Quiz } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,8 @@ export default function QuizStartPage() {
   const [userAttempts, setUserAttempts] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [lastAttemptId, setLastAttemptId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!quizId) return;
 
@@ -46,14 +48,34 @@ export default function QuizStartPage() {
         setQuiz(quizData);
 
         // Fetch user's previous attempts if logged in
-        if (user && quizData.maxAttempts) {
-          const attemptsQuery = query(
-            collection(db, "attempts"),
-            where("quizId", "==", quizId),
-            where("userId", "==", user.uid)
-          );
-          const attemptsSnap = await getDocs(attemptsQuery);
-          setUserAttempts(attemptsSnap.size);
+        if (user) {
+          try {
+            const attemptsQuery = query(
+              collection(db, "attempts"),
+              where("quizId", "==", quizId),
+              where("userId", "==", user.uid),
+              orderBy("submittedAt", "desc")
+            );
+            const attemptsSnap = await getDocs(attemptsQuery);
+            setUserAttempts(attemptsSnap.size);
+            if (!attemptsSnap.empty) {
+              setLastAttemptId(attemptsSnap.docs[0].id);
+            }
+          } catch (err) {
+            console.log("Error fetching attempts (likely index issue):", err);
+            // Fallback if index missing
+            const attemptsQueryFallback = query(
+              collection(db, "attempts"),
+              where("quizId", "==", quizId),
+              where("userId", "==", user.uid)
+            );
+            const attemptsSnapFallback = await getDocs(attemptsQueryFallback);
+            setUserAttempts(attemptsSnapFallback.size);
+            if (!attemptsSnapFallback.empty) {
+              // Client side sort if needed, or just take one
+              setLastAttemptId(attemptsSnapFallback.docs[0].id);
+            }
+          }
         }
 
       } catch (e) {
@@ -170,12 +192,19 @@ export default function QuizStartPage() {
             <CardTitle className="text-2xl text-destructive">Quiz Not Available</CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground mb-4">
               {isExpired ? "This quiz has expired." : `You have reached the maximum of ${quiz.maxAttempts} attempts for this quiz.`}
             </p>
-            <Button asChild className="mt-6">
-              <Link href="/dashboard">Back to Dashboard</Link>
-            </Button>
+            <div className="flex flex-col gap-3">
+              {lastAttemptId && (
+                <Button asChild variant="default" className="w-full">
+                  <Link href={`/results/${lastAttemptId}`}>View Your Previous Result</Link>
+                </Button>
+              )}
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/dashboard">Back to Dashboard</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

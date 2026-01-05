@@ -20,6 +20,7 @@ export interface Question {
   imageUrl?: string;
   options: QuestionOption[];
   correctAnswers: string[];
+  isRequired?: boolean; // New field
 }
 
 export interface Quiz {
@@ -57,5 +58,5 @@ export interface Attempt {
 }
 
 export interface AttemptResult extends Attempt {
-    questions: (Question & { userAnswer: string | string[] | null, isCorrect: boolean })[];
+  questions: (Question & { userAnswer: string | string[] | null, isCorrect: boolean })[];
 }

@@ -77,7 +77,7 @@ export default function QuestionOptionsEditor({ questionIndex, control, register
                         </div>
                     ))}
                 </div>
-                 <Button type="button" variant="outline" size="sm" onClick={() => append({ value: '' })}>
+                <Button type="button" variant="outline" size="sm" onClick={() => append({ value: '' })}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Add Option
                 </Button>
             </div>
@@ -111,7 +111,7 @@ export default function QuestionOptionsEditor({ questionIndex, control, register
     if (questionType === "text") {
         return (
             <div className="space-y-2">
-                <Label>Correct Answer (case-sensitive)</Label>
+                <Label>Correct Answer (Optional)</Label>
                 <Input {...register(`questions.${questionIndex}.correctAnswers.0`)} />
             </div>
         );

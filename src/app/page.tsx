@@ -4,6 +4,7 @@ import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { CheckCircle, Edit, Share2, BarChart2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import Footer from "@/components/layout/footer";
 
 export default function Home() {
   const heroImage = PlaceHolderImages.find(p => p.id === "hero-quiz");
@@ -49,7 +50,7 @@ export default function Home() {
             </div>
           </div>
         </section>
-        
+
         <section id="features" className="w-full py-12 md:py-24 lg:py-32">
           <div className="container px-4 md:px-6">
             <div className="flex flex-col items-center justify-center space-y-4 text-center">
@@ -98,7 +99,7 @@ export default function Home() {
             </div>
           </div>
         </section>
-        
+
         <section className="w-full py-12 md:py-24 lg:py-32 bg-card">
           <div className="container grid items-center justify-center gap-4 px-4 text-center md:px-6">
             <div className="space-y-3">
@@ -110,7 +111,7 @@ export default function Home() {
               </p>
             </div>
             <div className="mx-auto w-full max-w-sm space-y-2">
-               <Button asChild size="lg" className="w-full">
+              <Button asChild size="lg" className="w-full">
                 <Link href="/signup">
                   Sign Up for Free
                 </Link>
@@ -119,9 +120,7 @@ export default function Home() {
           </div>
         </section>
       </main>
-      <footer className="flex flex-col gap-2 sm:flex-row py-6 w-full shrink-0 items-center px-4 md:px-6 border-t">
-        <p className="text-xs text-muted-foreground">&copy; 2024 QuizWhiz. All rights reserved.</p>
-      </footer>
+      <Footer />
     </div>
   );
 }

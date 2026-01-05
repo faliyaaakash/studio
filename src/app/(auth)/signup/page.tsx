@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { auth } from "@/lib/firebase";
+import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/hooks/use-toast";
 import { FirebaseError } from "firebase/app";
 
@@ -32,12 +33,19 @@ type SignupFormValues = z.infer<typeof signupSchema>;
 
 function SignupContent() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/dashboard';
   const { toast } = useToast();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
   });
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(redirectPath);
+    }
+  }, [user, authLoading, router, redirectPath]);
 
   const onSubmit = async (data: SignupFormValues) => {
     try {

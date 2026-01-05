@@ -34,25 +34,62 @@ export default function QuizTakePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [startTime] = useState(new Date());
 
-  const handleSubmitQuiz = useCallback(async () => {
+  const handleSubmitQuiz = useCallback(async (submissionType: 'manual' | 'timeout' | 'cheating' = 'manual') => {
     if (isSubmitting || !quiz || !user) return;
     setIsSubmitting(true);
 
+    // Validate required questions only for manual submission
+    if (submissionType === 'manual') {
+      const firstUnansweredRequired = quiz.questions.find(q => {
+        if (!q.isRequired) return false;
+        const ans = answers[q.id];
+        if (!ans) return true;
+        if (Array.isArray(ans) && ans.length === 0) return true;
+        if (typeof ans === 'string' && ans.trim() === '') return true;
+        return false;
+      });
+
+      if (firstUnansweredRequired) {
+        toast({
+          title: "Required Questions Missing",
+          description: "Please answer all required questions before submitting.",
+          variant: "destructive"
+        });
+        const idx = quiz.questions.findIndex(q => q.id === firstUnansweredRequired.id);
+        if (idx !== -1) setCurrentQuestionIndex(idx);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     // Calculate score
     let score = 0;
+    if (submissionType === 'cheating') {
+      score = 0;
+    } else {
+      const answeredQuestions = quiz.questions.map(q => {
+        const userAnswer = answers[q.id] || null;
+        let isCorrect = false;
+        if (userAnswer) {
+          if (q.type === 'msq') {
+            isCorrect = Array.isArray(userAnswer) && userAnswer.length === q.correctAnswers.length && userAnswer.every(a => q.correctAnswers.includes(a));
+          } else {
+            isCorrect = q.correctAnswers[0] === userAnswer;
+          }
+        }
+        if (isCorrect) score++;
+        return { questionId: q.id, value: userAnswer };
+      });
+      // Note: answeredQuestions map was used for score calc but also constructing answers payload. 
+      // We need 'answeredQuestions' for payload regardless of score override.
+    }
+
+    // Re-construct answeredQuestions for payload consistently
     const answeredQuestions = quiz.questions.map(q => {
       const userAnswer = answers[q.id] || null;
-      let isCorrect = false;
-      if (userAnswer) {
-        if (q.type === 'msq') {
-          isCorrect = Array.isArray(userAnswer) && userAnswer.length === q.correctAnswers.length && userAnswer.every(a => q.correctAnswers.includes(a));
-        } else {
-          isCorrect = q.correctAnswers[0] === userAnswer;
-        }
-      }
-      if (isCorrect) score++;
       return { questionId: q.id, value: userAnswer };
     });
+
 
     const timeTakenSeconds = Math.round((new Date().getTime() - startTime.getTime()) / 1000);
 
@@ -85,6 +122,7 @@ export default function QuizTakePage() {
         startedAt: Timestamp.fromDate(startTime),
         submittedAt: Timestamp.now(),
         timeTakenSeconds: timeTakenSeconds,
+        submissionType: submissionType, // track why it was submitted
       };
 
       const attemptData = sanitizeData(rawAttemptData);
@@ -118,11 +156,11 @@ export default function QuizTakePage() {
     } else if (count >= 2) {
       toast({
         title: "Quiz Auto-Submitted",
-        description: "Your quiz has been submitted due to multiple cheating violations.",
+        description: "Your quiz has been submitted due to multiple cheating violations. Score will be 0.",
         variant: "destructive",
         duration: 5000,
       });
-      handleSubmitQuiz();
+      handleSubmitQuiz('cheating');
     }
     // Log violation to firestore
     if (user) {
@@ -175,7 +213,7 @@ export default function QuizTakePage() {
         title: "Time's Up!",
         description: "Your quiz has been automatically submitted.",
       });
-      handleSubmitQuiz();
+      handleSubmitQuiz('timeout');
       return;
     }
     const timer = setInterval(() => {
@@ -192,6 +230,21 @@ export default function QuizTakePage() {
   };
 
   const goToNext = () => {
+    if (quiz && currentQuestion) {
+      if (currentQuestion.isRequired) {
+        const ans = answers[currentQuestion.id];
+        const isAnswered = ans && (Array.isArray(ans) ? ans.length > 0 : (typeof ans === 'string' && ans.trim() !== ''));
+        if (!isAnswered) {
+          toast({
+            title: "Required Question",
+            description: "This question is required. Please answer to proceed.",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+    }
+
     if (quiz && currentQuestionIndex < quiz.questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
@@ -241,7 +294,10 @@ export default function QuizTakePage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="p-4 border rounded-lg min-h-[100px] space-y-4">
-            <p className="text-lg font-semibold">{currentQuestion.questionText}</p>
+            <p className="text-lg font-semibold">
+              {currentQuestion.questionText}
+              {currentQuestion.isRequired && <span className="text-destructive ml-1">*</span>}
+            </p>
             {currentQuestion.imageUrl && <div className="relative h-48 w-full"><Image src={currentQuestion.imageUrl} alt="Question Image" layout="fill" objectFit="contain" className="rounded-md" /></div>}
           </div>
           <div>
@@ -322,7 +378,7 @@ export default function QuizTakePage() {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleSubmitQuiz} disabled={isSubmitting}>
+                    <AlertDialogAction onClick={() => handleSubmitQuiz('manual')} disabled={isSubmitting}>
                       {isSubmitting ? 'Submitting...' : 'Submit'}
                     </AlertDialogAction>
                   </AlertDialogFooter>

@@ -35,7 +35,16 @@ const questionSchema = z.object({
     imageFile: z.instanceof(File).optional(),
     type: z.enum(['mcq', 'msq', 'tf', 'text']),
     options: z.array(optionSchema).optional(),
-    correctAnswers: z.array(z.string()).min(1, 'At least one correct answer is required'),
+    correctAnswers: z.array(z.string()),
+    isRequired: z.boolean().optional().default(false),
+}).superRefine((data, ctx) => {
+    if (['mcq', 'msq', 'tf'].includes(data.type) && data.correctAnswers.length === 0) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "At least one correct answer is required",
+            path: ["correctAnswers"]
+        });
+    }
 });
 
 const quizSchema = z.object({
@@ -279,10 +288,25 @@ export default function CreateQuizPage() {
 
                                     <QuestionOptionsEditor questionIndex={index} control={control} register={register} />
                                     {errors.questions?.[index]?.correctAnswers && <p className="text-sm text-destructive">{errors.questions?.[index]?.correctAnswers?.message}</p>}
+
+                                    <div className="flex items-center space-x-2 pt-2">
+                                        <Controller
+                                            control={control}
+                                            name={`questions.${index}.isRequired`}
+                                            render={({ field }) => (
+                                                <Switch
+                                                    id={`required-${index}`}
+                                                    checked={field.value}
+                                                    onCheckedChange={field.onChange}
+                                                />
+                                            )}
+                                        />
+                                        <Label htmlFor={`required-${index}`}>Required Question</Label>
+                                    </div>
                                 </CardContent>
                             </Card>
                         ))}
-                        <Button type="button" variant="outline" onClick={() => append({ questionText: '', type: 'mcq', options: [{ value: "Option 1" }, { value: "Option 2" }], correctAnswers: [] })}>
+                        <Button type="button" variant="outline" onClick={() => append({ questionText: '', type: 'mcq', options: [{ value: "Option 1" }, { value: "Option 2" }], correctAnswers: [], isRequired: false })}>
                             <PlusCircle className="mr-2 h-4 w-4" /> Add Question
                         </Button>
                         {errors.questions && typeof errors.questions === 'object' && 'message' in errors.questions && <p className="text-sm text-destructive">{errors.questions.message}</p>}

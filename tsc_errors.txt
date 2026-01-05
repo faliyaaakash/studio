@@ -1,0 +1,2 @@
+src/app/(app)/dashboard/page.tsx(93,74): error TS2339: Property 'attemptsCount' does not exist on type 'Quiz'.
+src/app/(app)/dashboard/page.tsx(242,37): error TS2339: Property 'attemptsCount' does not exist on type 'Quiz'.
