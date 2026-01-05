@@ -6,16 +6,18 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import type { Quiz, Attempt } from "@/lib/types";
 import { format } from "date-fns";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertCircle, BarChart3, CheckCircle2, Clock, Download, Search, ShieldAlert, Trophy, Users } from "lucide-react";
+import { CheckCircle2, Download, ShieldAlert, Trophy, Users } from "lucide-react";
 import Link from "next/link";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -113,6 +115,67 @@ export default function QuizAnalyticsPage() {
         else scoreDistribution[4].count++;
     });
 
+    // --- Export Functions ---
+    const handleExportExcel = () => {
+        if (!quiz || attempts.length === 0) return;
+
+        const data = attempts.map(a => {
+            const pct = (a.score / a.totalQuestions) * 100;
+            return {
+                "Student Name": a.userName || "Anonymous",
+                "Submission Date": format(a.submittedAt.toDate(), "PPpp"),
+                "Score": `${a.score}/${a.totalQuestions}`,
+                "Percentage": `${Math.round(pct)}%`,
+                "Status": pct >= passingThreshold ? "Passed" : "Failed",
+                "Duration (min)": (a.timeTakenSeconds / 60).toFixed(1),
+                "Cheating Violations": a.cheatingViolations
+            };
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Results");
+        XLSX.writeFile(workbook, `${quiz.title}_Report.xlsx`);
+    };
+
+    const handleExportPDF = () => {
+        if (!quiz || attempts.length === 0) return;
+
+        const doc = new jsPDF();
+
+        // Header
+        doc.setFontSize(18);
+        doc.text(`${quiz.title} - Performance Report`, 14, 20);
+
+        doc.setFontSize(11);
+        doc.text(`Generated on: ${format(new Date(), "PPpp")}`, 14, 30);
+        doc.text(`Total Attempts: ${totalAttempts}`, 14, 36);
+        doc.text(`Average Score: ${avgScore}%`, 14, 42);
+
+        // Table
+        const tableData = attempts.map(a => {
+            const pct = Math.round((a.score / a.totalQuestions) * 100);
+            return [
+                a.userName || "Anonymous",
+                format(a.submittedAt.toDate(), "MMM d, p"),
+                `${a.score}/${a.totalQuestions}`,
+                `${pct}%`,
+                pct >= passingThreshold ? "Passed" : "Failed",
+                a.cheatingViolations > 0 ? a.cheatingViolations.toString() : "-"
+            ];
+        });
+
+        autoTable(doc, {
+            head: [["Student Name", "Date", "Score", "%", "Status", "Violations"]],
+            body: tableData,
+            startY: 50,
+            styles: { fontSize: 10 },
+            headStyles: { fillColor: [22, 163, 74] } // Green-600 like
+        });
+
+        doc.save(`${quiz.title}_Report.pdf`);
+    };
+
     // --- Filtered Table Data ---
     const filteredAttempts = attempts.filter(attempt => {
         const matchesSearch = (attempt.userName || "Anonymous").toLowerCase().includes(searchTerm.toLowerCase());
@@ -145,7 +208,13 @@ export default function QuizAnalyticsPage() {
                     <p className="text-muted-foreground">Comprehensive performance report</p>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" asChild>
+                    <Button variant="outline" onClick={handleExportExcel}>
+                        <Download className="mr-2 h-4 w-4" /> Export Excel
+                    </Button>
+                    <Button variant="outline" onClick={handleExportPDF}>
+                        <Download className="mr-2 h-4 w-4" /> Export PDF
+                    </Button>
+                    <Button variant="default" asChild>
                         <Link href="/dashboard">Back to Dashboard</Link>
                     </Button>
                 </div>
